@@ -20,6 +20,7 @@ from typing import (
     Tuple,
     Union,
 )
+import os
 
 
 # --------------------------------------------------------------------------- #
@@ -51,6 +52,10 @@ class DiffError(ValueError):
     """Any problem detected while parsing or applying a patch."""
 
 
+class SecurityError(ValueError):
+    """Security violation detected while applying a patch."""
+
+
 # --------------------------------------------------------------------------- #
 #  Helper dataclasses used while parsing patches
 # --------------------------------------------------------------------------- #
@@ -72,6 +77,37 @@ class PatchAction:
 @dataclass
 class Patch:
     actions: Dict[str, PatchAction] = field(default_factory=dict)
+
+
+# --------------------------------------------------------------------------- #
+#  Security validation
+# --------------------------------------------------------------------------- #
+def _validate_safe_path(path: str, base_dir: str = ".") -> None:
+    """
+    Validate that a path is safe and doesn't contain path traversal attempts.
+    
+    Args:
+        path: The path to validate
+        base_dir: The base directory to validate against (default: current directory)
+    
+    Raises:
+        SecurityError: If the path is unsafe or contains path traversal
+    """
+    # Resolve the path relative to base_dir
+    try:
+        resolved_path = os.path.abspath(os.path.join(base_dir, path))
+        base_abs = os.path.abspath(base_dir)
+        
+        # Check if the resolved path is within the base directory
+        if not resolved_path.startswith(base_abs):
+            raise SecurityError(f"Path traversal detected: {path} resolves outside base directory")
+        
+        # Check for suspicious patterns
+        if ".." in path or "~" in path:
+            raise SecurityError(f"Path contains suspicious components: {path}")
+            
+    except (OSError, ValueError) as e:
+        raise SecurityError(f"Invalid path: {path} - {e}")
 
 
 # --------------------------------------------------------------------------- #
@@ -483,6 +519,9 @@ def open_file(path: str) -> str:
 
 
 def write_file(path: str, content: str) -> None:
+    # Validate path for security
+    _validate_safe_path(path)
+    
     target = pathlib.Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     with target.open("wt", encoding="utf-8") as fh:
@@ -490,6 +529,9 @@ def write_file(path: str, content: str) -> None:
 
 
 def remove_file(path: str) -> None:
+    # Validate path for security
+    _validate_safe_path(path)
+    
     pathlib.Path(path).unlink(missing_ok=True)
 
 

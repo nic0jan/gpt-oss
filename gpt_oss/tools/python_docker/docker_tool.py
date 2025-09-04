@@ -44,19 +44,32 @@ def call_python_script(script: str) -> str:
     tarstream.seek(0)
 
     # 2. Start the container
-    container = _docker_client.containers.create(
-        "python:3.11", command="sleep infinity", detach=True
-    )
+    container = None
     try:
+        container = _docker_client.containers.create(
+            "python:3.11", command="sleep infinity", detach=True
+        )
         container.start()
         # 3. Put the script into the container
         container.put_archive(path="/tmp", data=tarstream.read())
         # 4. Execute the script
         exec_result = container.exec_run(f"python /tmp/{script_name}")
         output = exec_result.output.decode("utf-8")
+        return output
+    except Exception as e:
+        # Log the error for debugging
+        import logging
+        logging.error(f"Error executing Python script in Docker: {e}")
+        raise
     finally:
-        container.remove(force=True)
-    return output
+        # Always clean up the container, even if creation failed
+        if container is not None:
+            try:
+                container.remove(force=True)
+            except Exception as cleanup_error:
+                # Log cleanup errors but don't raise them to avoid masking the original error
+                import logging
+                logging.error(f"Error cleaning up Docker container: {cleanup_error}")
 
 
 class PythonTool(Tool):

@@ -50,11 +50,20 @@ def get_user_input():
     rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
     if rank == 0:
         user_input = input()
+        # Ensure we have valid input before broadcasting
+        if not user_input.strip():
+            user_input = input("Please provide input: ")  # Retry if empty
     else:
         user_input = ""
+    
     user_input_list = [user_input]
     if torch.distributed.is_initialized():
+        # Synchronize to ensure rank 0 has processed input before broadcast
+        torch.distributed.barrier()
         torch.distributed.broadcast_object_list(user_input_list, 0)
+        # Additional barrier to ensure all ranks have received the broadcast
+        torch.distributed.barrier()
+    
     return user_input_list[0]
 
 
